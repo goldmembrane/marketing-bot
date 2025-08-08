@@ -1,0 +1,28 @@
+// src/render.js
+const matter = require("gray-matter");
+const MarkdownIt = require("markdown-it");
+const md = new MarkdownIt({ html: false, linkify: true });
+
+function parsePost(markdown) {
+  const parsed = matter(markdown);
+  const {
+    title,
+    tags = [],
+    cover_image,
+    canonical_url,
+    publish = true,
+  } = parsed.data;
+  const bodyMd = parsed.content.trim();
+  const bodyHtml = md.render(bodyMd);
+  return {
+    title,
+    tags,
+    cover_image,
+    canonical_url,
+    bodyMd,
+    bodyHtml,
+    draft: !publish,
+  };
+}
+
+module.exports = { parsePost };

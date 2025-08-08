@@ -18,14 +18,6 @@ async function run() {
   await fs.writeFile(filePath, content);
   console.log(`✅ Saved to ${filePath}`);
 
-  // ✅ matter로 content 파싱
-  // const parsed = matter(content);
-  // const { title, tags = [] } = parsed.data; // image 제거
-  // const body = parsed.content;
-
-  // // ✅ 트윗 업로드
-  // await postToTwitter({ title, tags }, body); // image 없이 전달
-
   const lines = content.split("\n");
 
   const titleLine = lines.find((line) => line.startsWith("# "));
