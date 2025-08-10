@@ -1,6 +1,7 @@
 // src/gpt.js
 const { OpenAI } = require("openai");
 require("dotenv").config();
+const { pickTheme } = require("./themeManager");
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -117,40 +118,118 @@ Return ONLY the tweet text with the exact line breaks described above.`,
 
 // ✅ 새로 추가: 블로그용 본문 JSON 생성 → MD로 변환
 async function generateBlogMarkdown() {
-  // 1) 모델에 JSON만 요청 (프론트매터는 코드에서 만든다)
-  const sys = `You generate blog content JSON only. No markdown, no prose around it.`;
-  const user = `
+  const SECTION_TITLES = {
+    정보전달: {
+      summary: "Summary",
+      why: "What is Palette Box?",
+      features: "Key Features",
+      useCases: "Best For",
+      steps: "Quick Start",
+      tips: "Pro Tips",
+      coupon: "Coupon",
+      cta: "Next Steps",
+    },
+    감성: {
+      summary: "A Gentle Overview",
+      why: "Why Creators Love Palette Box",
+      features: "Moments That Shine",
+      useCases: "Where It Feels Right",
+      steps: "Begin Your Flow",
+      tips: "Little Sparks",
+      coupon: "A Small Gift",
+      cta: "Create With Ease",
+    },
+    "유용성 어필": {
+      summary: "At-a-Glance",
+      why: "Make Your Workflow Faster",
+      features: "What You’ll Get",
+      useCases: "High-Impact Uses",
+      steps: "Do It Now",
+      tips: "Optimization Tips",
+      coupon: "Save More",
+      cta: "Ship Faster Today",
+    },
+    고민상담: {
+      summary: "Let’s Fix This",
+      why: "How Palette Box Eases Your Pain",
+      features: "What Helps Right Away",
+      useCases: "When To Use",
+      steps: "Simple Steps",
+      tips: "Friendly Advice",
+      coupon: "Here’s a Free Boost",
+      cta: "You’ve Got This",
+    },
+  };
+
+  // 안전장치: 미정의 테마일 때 기본값
+  const DEFAULT_TITLES = SECTION_TITLES["정보전달"];
+  const COMMON_SCHEMA = `
 Return STRICT JSON with keys:
 {
-  "title": string (<= 80 chars),
-  "tags": string[] (3-6 items, NO #),
-  "cover_image": string | null (URL or null),
-  "summary": string (1-2 lines),
-  "description": string (3-6 sentences, markdown allowed, NO frontmatter),
-  "cta": string (must mention: PALETTEBOXFREE3MONTH gives 3 months free)
+  "title": string (max 80),
+  "tags": string[] (3-6 items, NO '#', lowercase),
+  "cover_image": string | null,          // absolute URL or null
+  "summary": string (1-2 lines, max 220 chars, value oriented),
+  "long_description": string[],          // 2-3 paragraphs, each 80-140 words
+  "features": string[],                  // 4-6 bullet items, 6-12 words each
+  "use_cases": string[],                 // 3-5 bullet items, 6-12 words each
+  "steps": string[],                     // 3-6 concise steps (imperative)
+  "pro_tips": string[],                  // 3-5 short tips
+  "cta": string                          // must clearly mention: PALETTEBOXFREE3MONTH gives 3 months free
 }
 
-Topic: Chrome extension "Palette Box".
-Angle: solo indie developer, capture web colors, save mood-based palettes, improve workflow.
-
 Rules:
-- Output ONLY valid JSON. No code fences, no extra text.
-- "tags" must be plain keywords (e.g., ["indie","design","palette-box"]), not hashtags.
-- Mention the coupon clearly in "cta".
+- Output ONLY valid JSON. No extra text, no code fences, no frontmatter.
+- "tags" are plain keywords (e.g., ["indie","design","palette"]), NOT hashtags.
 `;
 
+  // 테마별 톤 지시문
+  function themeStyle(theme) {
+    switch (theme) {
+      case "정보전달":
+        return `Tone: clear, neutral, structured. Focus on facts, capabilities, outcomes. Minimize adjectives; prefer specifics and examples.`;
+      case "감성":
+        return `Tone: warm, evocative, lightly narrative. Use sensory language and gentle storytelling. Inspire creativity and flow.`;
+      case "유용성 어필":
+        return `Tone: practical, result-oriented. Emphasize time-saving, consistency, and measurable workflow improvements. Use action verbs.`;
+      case "고민상담":
+        return `Tone: empathetic, conversational. Acknowledge common pains (color picking, consistency, scattered palettes) and offer reassuring steps.`;
+      default:
+        return `Tone: clear and helpful.`;
+    }
+  }
+
+  function buildUserPrompt(theme) {
+    return `
+${COMMON_SCHEMA}
+
+Topic: Chrome extension "Palette Box".
+Angle: solo indie developer; capture web colors from webpages, save mood-based palettes, improve design workflow.
+
+
+${themeStyle(theme)}
+
+Output ONLY the JSON.`;
+  }
+
+  const theme = pickTheme(); // 🎯 중복 없이 순환
+  console.log(`🧩 Theme selected: ${theme}`);
+
+  // 1) 모델에 JSON만 요청 (프론트매터는 코드에서 만든다)
+  const sys = `You generate blog content JSON only. No markdown, no prose around it.`;
+  const user = buildUserPrompt(theme);
   const res = await openai.chat.completions.create({
     model: "gpt-3.5-turbo",
     messages: [
       { role: "system", content: sys },
       { role: "user", content: user },
     ],
-    temperature: 0.6,
+    temperature: 0.65,
   });
 
   const raw = res.choices[0].message.content.trim();
 
-  // 2) JSON 파싱 안정화
+  // JSON 파싱
   let data;
   try {
     data = JSON.parse(raw);
@@ -158,7 +237,7 @@ Rules:
     throw new Error("GPT JSON parse failed: " + e.message + "\nRAW:\n" + raw);
   }
 
-  // 3) 프론트매터 + MD 조립 (여기서 ---를 정확히 닫아줌)
+  // 프론트매터 생성
   const fm = buildFrontmatter({
     title: data.title || "Palette Box — Blog",
     tags: Array.isArray(data.tags) ? data.tags : [],
@@ -167,18 +246,53 @@ Rules:
     canonical_url: process.env.SITE_CANONICAL || null,
   });
 
+  // 본문 조립
+  const p = (arr) => (Array.isArray(arr) ? arr.filter(Boolean) : []);
+  const longDesc = p(data.long_description).join("\n\n");
+  const features = p(data.features)
+    .map((s) => `- ${s}`)
+    .join("\n");
+  const useCases = p(data.use_cases)
+    .map((s) => `- ${s}`)
+    .join("\n");
+  const steps = p(data.steps)
+    .map((s, i) => `${i + 1}. ${s}`)
+    .join("\n");
+  const tips = p(data.pro_tips)
+    .map((s) => `- ${s}`)
+    .join("\n");
+
+  // ✅ 테마별 타이틀 적용
+  const T = SECTION_TITLES[theme] || DEFAULT_TITLES;
+
   const body = [
-    "## Summary",
+    `## ${T.summary}`,
     data.summary || "",
     "",
-    "## Description",
-    data.description || "",
+    `## ${T.why}`,
+    longDesc || "",
     "",
-    "## Coupon",
+    features ? `## ${T.features}` : "",
+    features,
+    features ? "" : "",
+    useCases ? `## ${T.useCases}` : "",
+    useCases,
+    useCases ? "" : "",
+    steps ? `## ${T.steps}` : "",
+    steps,
+    steps ? "" : "",
+    tips ? `## ${T.tips}` : "",
+    tips,
+    tips ? "" : "",
+    `## ${T.coupon}`,
     "Use code **PALETTEBOXFREE3MONTH** for 3 months free.",
     "",
+    `## ${T.cta}`,
     data.cta || "",
-  ].join("\n");
+    "",
+  ]
+    .filter(Boolean)
+    .join("\n");
 
   return `${fm}\n${body}\n`;
 }
