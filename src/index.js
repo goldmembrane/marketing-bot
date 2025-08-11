@@ -2,11 +2,10 @@
 require("dotenv").config();
 const { generatePalettePost } = require("./gpt");
 const { postToTwitter } = require("./twitter");
-const matter = require("gray-matter");
 const fs = require("fs-extra");
 const path = require("path");
 
-async function run() {
+async function twitterRun() {
   const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
 
   console.log("📤 Generating post via GPT...");
@@ -38,4 +37,11 @@ async function run() {
   await postToTwitter({ title, tags }, body);
 }
 
-run();
+if (require.main === module) {
+  twitterRun().catch((e) => {
+    console.error("❌ Failed:", e);
+    process.exit(1);
+  });
+}
+
+module.exports = { twitterRun };
