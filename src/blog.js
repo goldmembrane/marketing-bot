@@ -1,4 +1,4 @@
-// src/blog_make_and_publish.js
+// src/blog.js
 require("dotenv").config();
 const fs = require("fs-extra");
 const path = require("path");
@@ -29,13 +29,13 @@ async function run() {
   await fs.writeFile(filePath, md, "utf8");
   console.log(`✅ Saved: ${filePath}`);
 
-  // console.log("🚀 Publishing to enabled platforms...");
-  // const results = await publishFile(filePath);
+  console.log("🚀 Publishing to enabled platforms...");
+  const results = await publishFile(filePath);
 
-  // results.forEach((r) => {
-  //   if (r.ok) console.log(`✅ ${r.platform}: ${r.url}`);
-  //   else console.error(`❌ ${r.platform}: ${r.error}`);
-  // });
+  results.forEach((r) => {
+    if (r.ok) console.log(`✅ ${r.platform}: ${r.url}`);
+    else console.error(`❌ ${r.platform}: ${r.error}`);
+  });
 }
 
 if (require.main === module) {
